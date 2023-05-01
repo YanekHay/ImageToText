@@ -8,6 +8,20 @@ from .plotter import draw_curve_on_image
 from .Line import Line
 
 def extend_lines(feature, orientation, dilation_count=1, erode_count=1, line_min_width=50, dilation_line_min_width=150):
+    """
+    Extend the lines in a binary image along the specified orientation by applying dilation and erosion operations.
+
+    Inputs:
+        - `feature`: A binary image containing lines to be extended | type: torch.Tensor
+        - `orientation`: The orientation of the lines to be extended, either "vertical" or "horizontal" | type: str
+        - `dilation_count`: The number of times to apply dilation operation on the binary image | type: int, default=1
+        - `erode_count`: The number of times to apply erosion operation on the binary image | type: int, default=1
+        - `line_min_width`: The minimum width of a line in pixels, used to create the erosion kernel | type: int, default=50
+        - `dilation_line_min_width`: The minimum width of a line in pixels, used to create the dilation kernel | type: int, default=150
+
+    Output(s):
+       - `img_bin`: The binary image with extended lines along the specified orientation | type: numpy.ndarray (dtype=np.uint8)
+    """
     if orientation.lower() not in ["vertical","horizontal"]:
         raise ValueError('`orientation` should be one of the following  ["vertical","horizontal"]')
         
