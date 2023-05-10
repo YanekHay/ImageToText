@@ -1,0 +1,15 @@
+*pycache*
+*checkpoint*
+*.jpeg
+*.png
+Repositories/CRAFT-pytorch/result
+Repositories/cvat
+Repositories/CVAT_Backups
+Repositories/Dark Label
+Repositories/scalabel
+Repositories/unilm
+Repositories/yolov5
+Repositories/stn-ocr
+
+
+Notebookx/Yolov8

@@ -63,7 +63,7 @@ class LetterLabeler:
     def __init__(self,
                  image_paths:list,
                  label_paths:list,
-                 label_class=Label):
+                 ):
         
         
         self.image_paths = image_paths
