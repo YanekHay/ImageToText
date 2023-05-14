@@ -28,7 +28,8 @@ sys.path.append("../")
 from custom_functions.yolo_data import  load_yolo_labels
 
 
-all_classes = json.load(open("all_classes.json"))
+class GLOBAL:
+    all_classes = json.load(open("all_classes_v2.json"))
 
 class Label:
     def __init__(self, img_id, id, label, img_path, polygon):
@@ -40,7 +41,11 @@ class Label:
     
     @property
     def _class(self):
-       all_classes[self.label]
+        lb = str(self.label)
+        if lb not in GLOBAL.all_classes.keys():
+            return GLOBAL.all_classes["?"]
+        
+        return GLOBAL.all_classes[lb]
        
     def copy_image(self, location):
         shutil.copy2(str(self.img_path), location)
@@ -63,11 +68,14 @@ class LetterLabeler:
     def __init__(self,
                  image_paths:list,
                  label_paths:list,
+                 save_dir:str
                  ):
         
         
         self.image_paths = image_paths
         self.label_paths = label_paths
+        self.save_dir = save_dir
+        
         self.polygons = []
         self.polygons_cache = []
         self.selected_polygon = None
@@ -150,7 +158,7 @@ class LetterLabeler:
                 
             self.update_image()
         elif event.key == 'ctrl+s':
-            self.save_labels("./TEST")
+            self.save_labels(self.save_dir)
             
         elif len(event.key)==1:
             # Add label to the selected polygon
@@ -198,10 +206,10 @@ if __name__=="__main__":
     image_paths = glob(os.path.join(root, "images/*"))
     label_paths = [str(i).replace("images", "labels").replace("jpeg", "txt") for i in image_paths]
     
-    labeler = LetterLabeler(image_paths, label_paths)
+    labeler = LetterLabeler(image_paths, label_paths, save_dir=filedialog.askdirectory())
     try:
         plt.show()
     except KeyboardInterrupt:
         print("Exiting...")
-        labeler.save_labels("./TEST")
+        labeler.save_labels()
         

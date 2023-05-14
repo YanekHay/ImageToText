@@ -15,6 +15,7 @@ from tkinter import filedialog
 
 class GLOBAL:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    all_classes = np.load("weights/classes.npy")
 
 class YoloCaller:
     def __init__(self,
@@ -30,16 +31,18 @@ class YoloCaller:
         self.boxes = []
 
     
-    def detect_single(self, img, imgsz=640, conf=0.5, iou=0.7, return_device="cpu"):
+    def detect_single(self, img, imgsz=640, conf=0.5, iou=0.7, return_device="cpu", seg=True):
         # Detect objects
         preds = self.model.predict(img, imgsz=imgsz, conf=conf, iou=iou)[0].to(device=return_device)
+        if preds is None or len(preds) == 0:
+            return [], []
+        
+        res = [preds.boxes]
+        if seg:
+            res.append(preds.masks.xyn)
+        
+        return res
 
-        return preds.boxes, preds.masks.xyn
-
-    def convert_result(self, yolo_result):
-        for res in yolo_result:
-            pass
-                    
 class App(tk.Tk):
     def __init__(self,
                  image_paths:list,
@@ -49,7 +52,7 @@ class App(tk.Tk):
         self.image_paths = image_paths
         st = time()
         self.table_detector = YoloCaller("./weights/Table_det.pt", device=device)
-        self.word_detector = YoloCaller("./weights/Word_det.pt", device=device)
+        self.word_detector = YoloCaller("./weights/Word_det2.pt", device=device)
         self.char_detector = YoloCaller("./weights/Char_det.pt", device=device)
         self.word_polygons = []
         self.table_polygons = []
@@ -58,6 +61,7 @@ class App(tk.Tk):
         super().__init__()
         self.__init_window()
         self.__bind_keys()
+
 
     def on_key_press(self, event):
         pass
@@ -109,13 +113,31 @@ class App(tk.Tk):
 
         
         table_boxes, _table_polygons = self.table_detector.detect_single(self.img, conf=0.5, iou=0.7)
-        self.create_polygons(_table_polygons, self.table_polygons)
+        self.create_polygons(_table_polygons, self.table_polygons,  self.on_table_enter, self.on_table_leave)
         
         word_boxes, _word_polygons  = self.word_detector.detect_single(self.img, imgsz=640, conf=0.2, iou=0.3)
-        self.create_polygons(_word_polygons, self.word_polygons)
+        self.create_polygons(_word_polygons, self.word_polygons,   self.on_word_enter, self.on_word_leave)
+        self.predict_words(self.img, word_boxes)
+    
+    def predict_words(self, img, word_boxes):
+        # crop words from the image
+        word_crops = []
+        for box in word_boxes.xyxy:
+            word_crops.append(img.crop(box.cpu().numpy()))
         
-    def create_polygons(self, polygons, poly_list):
-        self.table_polygons.clear()
+        word_letters = self.char_detector.model.predict(word_crops, imgsz=320,  batch=32)
+        self.words = []
+        
+        for word in word_letters:
+            word = word.cpu().numpy()
+            boxes = word.boxes.data.astype(int)
+            indices = np.lexsort((word.boxes.xywh[:, 1], word.boxes.xywh[:, 0]))
+            boxes = boxes[indices]
+            self.words.append("".join(GLOBAL.all_classes[boxes[:,-1]].tolist()))
+            boxes.tolist().sort(key=lambda box: (box[0], box[1]))
+                    
+    def create_polygons(self, polygons, poly_list, hover_function, leave_function):
+        poly_list.clear()
         for polygon in polygons:
             polygon *= np.array(self.resized_image.size) # Rescale the polygon to the image size
             polygon += np.array(self._canvas_img_box[:2]).astype(int) # Move the polygon to the center of the canvas
@@ -123,8 +145,8 @@ class App(tk.Tk):
             tk_poly = self.canvas.create_polygon(polygon.tolist(), outline='', fill='', width=3)
             
             poly_list.append(tk_poly)
-            self.canvas.tag_bind(tk_poly, "<Enter>", lambda event, polygon=tk_poly: self.on_enter(event, polygon))
-            self.canvas.tag_bind(tk_poly, "<Leave>", lambda event, polygon=tk_poly: self.on_leave(event, polygon))
+            self.canvas.tag_bind(tk_poly, "<Enter>", lambda event, polygon=tk_poly: hover_function(event, polygon))
+            self.canvas.tag_bind(tk_poly, "<Leave>", lambda event, polygon=tk_poly: leave_function(event, polygon))
 
 
     def __init_window(self):
@@ -133,13 +155,35 @@ class App(tk.Tk):
         self.height = int(self.winfo_screenheight()*0.9)
         self.geometry(f"{self.width}x{self.height}")
         self.canvas = tk.Canvas(self)
+        
+        self.word_label = Label(self, text="Label text", font=("Arial", 40), highlightthickness=4, highlightbackground="black")
+        self.word_label.pack(anchor="se")
         self.update_image()
 
-    def on_enter(self, event, polygon):
+    def on_table_enter(self, event, polygon):
         self.canvas.itemconfig(polygon, outline="#000000")
+        self.word_label.config(text=f"Աղյուսակ_{self.table_polygons.index(polygon)+1}")
 
-    def on_leave(self, event, polygon):
+    def on_table_leave(self, event, polygon):
         self.canvas.itemconfig(polygon, outline="")
+        self.word_label.config(text="")
+    
+    def on_word_enter(self, event, polygon):
+        self.canvas.itemconfig(polygon, outline="#000000")
+        self.word_label.config(text=self.words[self.word_polygons.index(polygon)])
+
+    def on_word_leave(self, event, polygon):
+        self.canvas.itemconfig(polygon, outline="")
+        self.word_label.config(text="")
+    
+    # def on_table_enter(self, event, polygon):
+    #     self.canvas.itemconfig(polygon, outline="#000000")
+    #     self.word_label.config(text=self.words[self.word_polygons.index(polygon)])
+
+    # def on_table_leave(self, event, polygon):
+    #     self.canvas.itemconfig(polygon, outline="")
+    #     self.word_label.config(text="")
+        
 
 if __name__=="__main__":
     root = filedialog.askdirectory()
