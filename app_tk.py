@@ -1,21 +1,26 @@
-import os
-import cv2
+import json
 import torch
+import pyperclip
 import numpy as np
-from glob import glob
 from time import time
 from tkinter import *
 from pathlib import Path
 from ultralytics import YOLO
 
 import tkinter as tk
-from PIL import ImageTk, Image
 from tkinter import filedialog
-
+from PIL import ImageTk, Image
 
 class GLOBAL:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     all_classes = np.load("weights/classes.npy")
+    
+    def get_image_paths(root:str):
+        root = Path(root)
+        image_extensions = ['.jpg', '.jpeg', '.png', '.gif']  # specify the image file extensions here
+        image_paths = [str(path) for path in root.rglob('*') if path.suffix in image_extensions]
+        
+        return image_paths
 
 class YoloCaller:
     def __init__(self,
@@ -61,7 +66,8 @@ class App(tk.Tk):
         super().__init__()
         self.__init_window()
         self.__bind_keys()
-
+        self.attributes("-topmost", True)
+        self.attributes("-topmost", False)
 
     def on_key_press(self, event):
         pass
@@ -69,9 +75,10 @@ class App(tk.Tk):
     def __bind_keys(self):
         self.bind_all("<Key>", self.on_key_press)
         self.bind('<Control-d>', self.next)
-        self.bind('<Control-a>', self.prev) 
-         
-    
+        self.bind('<Control-a>', self.prev)
+        self.bind('<Control-o>', self.openimg) 
+        self.bind('<Control-s>', self.save_words) 
+        
     def next(self, event):
         self.current_image_index += 1
         if self.current_image_index == len(self.image_paths):
@@ -94,8 +101,6 @@ class App(tk.Tk):
             
         self.word_polygons.clear()
 
-            
-                     
     def update_image(self):
         self._delete_polygons()
         
@@ -115,9 +120,10 @@ class App(tk.Tk):
         table_boxes, _table_polygons = self.table_detector.detect_single(self.img, conf=0.5, iou=0.7)
         self.create_polygons(_table_polygons, self.table_polygons,  self.on_table_enter, self.on_table_leave)
         
-        word_boxes, _word_polygons  = self.word_detector.detect_single(self.img, imgsz=640, conf=0.2, iou=0.3)
-        self.create_polygons(_word_polygons, self.word_polygons,   self.on_word_enter, self.on_word_leave)
+        word_boxes, self._word_polygons  = self.word_detector.detect_single(self.img, imgsz=640, conf=0.2, iou=0.3)
+        self.create_polygons(self._word_polygons, self.word_polygons,   self.on_word_enter, self.on_word_leave)
         self.predict_words(self.img, word_boxes)
+    
     
     def predict_words(self, img, word_boxes):
         # crop words from the image
@@ -147,7 +153,7 @@ class App(tk.Tk):
             poly_list.append(tk_poly)
             self.canvas.tag_bind(tk_poly, "<Enter>", lambda event, polygon=tk_poly: hover_function(event, polygon))
             self.canvas.tag_bind(tk_poly, "<Leave>", lambda event, polygon=tk_poly: leave_function(event, polygon))
-
+            self.canvas.tag_bind(tk_poly, "<Button-3>", lambda event, polygon=tk_poly: self.copy(event, polygon))
 
     def __init_window(self):
         self.state("zoomed")
@@ -158,8 +164,50 @@ class App(tk.Tk):
         
         self.word_label = Label(self, text="Label text", font=("Arial", 40), highlightthickness=4, highlightbackground="black")
         self.word_label.pack(anchor="se")
-        self.update_image()
+        
+        
+        menubar = Menu(self)
+        filemenu = Menu(menubar, tearoff=0)
+        filemenu.add_command(label="Open images (Ctrl+O)", command=self.openimg)
+        filemenu.add_separator()
+        filemenu.add_command(label="Exit", command=self.quit)
+        menubar.add_cascade(label="File", menu=filemenu)
 
+        self.config(menu=menubar)
+
+        self.update_image()
+    
+    def copy(self, event, polygon):
+        
+        idx = self.word_polygons.index(polygon)
+        word = self.words[idx]
+        pyperclip.copy(word)# Append to system clipboard
+        # popup a baloon "Copied to clipboard"
+        self.canvas.itemconfig(polygon, outline="#00A000")
+        self.word_label.config(text=f"{word}։ Բառը Պատճենված է:", background="#00A000", foreground="#FFFFFF")
+        def show_copy():
+            self.canvas.itemconfig(polygon, outline="#000000")
+            self.word_label.config(text=word, background="#FFFFFF", foreground="#000000")
+             
+        self.after(400, show_copy)
+        
+        
+    def openimg(self, event=None):
+        self.image_paths = filedialog.askopenfilenames()
+        self.current_image_index = 0
+        self.update_image()
+        
+    def save_words(self, event=None):
+        dir = filedialog.asksaveasfile(defaultextension=".json")
+        res = {}
+        for i, word in enumerate(self.words):
+            res[word] = self._word_polygons[i].tolist()
+
+        # with open(dir, "w") as f:
+        # with open(f"{self.image_paths[self.current_image_index]}_words.json", "w") as f:
+        json.dump(res, dir, indent=4)
+            
+            
     def on_table_enter(self, event, polygon):
         self.canvas.itemconfig(polygon, outline="#000000")
         self.word_label.config(text=f"Աղյուսակ_{self.table_polygons.index(polygon)+1}")
@@ -187,8 +235,8 @@ class App(tk.Tk):
 
 if __name__=="__main__":
     root = filedialog.askdirectory()
-    root = Path(root)
-    image_paths = glob(os.path.join(root, "images/*"))
+    image_paths = GLOBAL.get_image_paths(root)
+    
     app = App(image_paths=image_paths, device=GLOBAL.device)
     app.mainloop()
     
